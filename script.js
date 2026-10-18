@@ -1,33 +1,26 @@
 'use strict';
-/* WAITLIST SETUP: use 'netlify' after enabling Netlify form detection and
-   publishing your privacy contact/retention policy; then redeploy.
-   On GitHub Pages use 'formspree' and your public Formspree endpoint.
-   Never put private API keys in browser JavaScript. */
-const WAITLIST = { provider: 'demo', endpoint: '' };
 const root = document.documentElement;
 const $ = (selector, parent = document) => parent.querySelector(selector);
 const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const darkScheme = matchMedia('(prefers-color-scheme: dark)');
 const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
 let motionPaused = reducedMotion.matches;
 let savedTheme;
 try { savedTheme = localStorage.getItem('boltcharge-theme'); } catch (_) { /* Storage may be blocked. */ }
-const themes = ['neon', 'matrix', 'aurora', 'solar', 'light'];
-let manualTheme = themes.includes(savedTheme);
+// Holo Light is the default; keep any previously selected Solar Flare preference.
+const initialTheme = savedTheme === 'solar' ? 'solar' : 'light';
 function setTheme(theme) {
   root.dataset.theme = theme;
-  $('#theme').value = theme;
+  $('#theme-toggle').setAttribute('aria-checked', String(theme === 'solar'));
+  $('#theme-toggle').title = theme === 'solar' ? 'Switch to light theme' : 'Switch to dark theme';
+  $('#theme-toggle').setAttribute('aria-label', theme === 'solar' ? 'Enable light theme' : 'Enable dark theme');
   $('meta[name="theme-color"]').content = getComputedStyle(root).getPropertyValue('--bg').trim();
 }
-setTheme(manualTheme ? savedTheme : darkScheme.matches ? 'aurora' : 'light');
-$('#theme').addEventListener('change', event => {
-  manualTheme = true;
-  setTheme(event.target.value);
-  try { localStorage.setItem('boltcharge-theme', event.target.value); } catch (_) { /* Theme still works. */ }
-});
-darkScheme.addEventListener('change', () => {
-  if (!manualTheme) setTheme(darkScheme.matches ? 'aurora' : 'light');
+setTheme(initialTheme);
+$('#theme-toggle').addEventListener('click', () => {
+  const theme = root.dataset.theme === 'solar' ? 'light' : 'solar';
+  setTheme(theme);
+  try { localStorage.setItem('boltcharge-theme', theme); } catch (_) { /* Theme still works. */ }
 });
 $('#year').textContent = new Date().getFullYear();
 
@@ -50,24 +43,11 @@ document.addEventListener('keydown', event => {
 });
 matchMedia('(min-width: 801px)').addEventListener('change', closeMenu);
 
-// Reveal once; content remains visible without JavaScript or IntersectionObserver.
-function countUp(element) {
-  const target = Number(element.dataset.count);
-  if (motionPaused) { element.textContent = target; return; }
-  const start = performance.now();
-  function tick(time) {
-    const progress = Math.min((time - start) / 1000, 1);
-    element.textContent = Math.round(target * (1 - (1 - progress) ** 3));
-    if (progress < 1 && !motionPaused) requestAnimationFrame(tick);
-    else element.textContent = target;
-  }
-  requestAnimationFrame(tick);
-}
+// Reveal sections while retaining full content for browsers without animation support.
 if ('IntersectionObserver' in window) {
   const observer = new IntersectionObserver(entries => entries.forEach(entry => {
     if (!entry.isIntersecting) return;
     entry.target.classList.remove('pending');
-    $$('[data-count]', entry.target).forEach(countUp);
     observer.unobserve(entry.target);
   }), { threshold: 0.08 });
   $$('.reveal').forEach(section => {
@@ -127,28 +107,6 @@ function type() {
   typeTimer = setTimeout(type, delay);
 }
 
-// Auto-rotation pauses on hover, keyboard focus, hidden tabs, and reduced motion.
-const slides = $$('#slides figure');
-const carousel = $('.carousel');
-let slide = 0, slideshowPaused = false, hovering = false;
-function showSlide(index) {
-  slide = (index + slides.length) % slides.length;
-  slides.forEach((item, i) => { item.hidden = i !== slide; });
-  $('#slide-number').textContent = `0${slide + 1} / 0${slides.length}`;
-}
-$('#previous').addEventListener('click', () => showSlide(slide - 1));
-$('#next').addEventListener('click', () => showSlide(slide + 1));
-$('#carousel-pause').addEventListener('click', () => {
-  slideshowPaused = !slideshowPaused;
-  $('#carousel-pause').setAttribute('aria-pressed', String(slideshowPaused));
-  $('#carousel-pause').textContent = slideshowPaused ? 'Play slideshow' : 'Pause slideshow';
-});
-carousel.addEventListener('pointerenter', () => { hovering = true; });
-carousel.addEventListener('pointerleave', () => { hovering = false; });
-setInterval(() => {
-  if (!motionPaused && !slideshowPaused && !hovering && !document.hidden && !carousel.contains(document.activeElement)) showSlide(slide + 1);
-}, 6500);
-
 // Lightweight canvas: capped DPR, 38 points, no external assets.
 const canvas = $('#particles');
 const ctx = canvas.getContext('2d');
@@ -179,9 +137,6 @@ window.addEventListener('resize', resizeCanvas, { passive: true });
 function syncMotion() {
   clearTimeout(typeTimer); cancelAnimationFrame(frame);
   root.dataset.motion = motionPaused ? 'off' : 'on';
-  $('#motion').setAttribute('aria-pressed', String(motionPaused));
-  $('#motion').setAttribute('aria-label', motionPaused ? 'Resume animations' : 'Pause animations');
-  $('#motion').textContent = motionPaused ? '▷' : 'Ⅱ';
   if (motionPaused) {
     typed.textContent = phrases[0];
     $$('.tilt').forEach(card => { card.style.transform = ''; });
@@ -193,64 +148,86 @@ function syncMotion() {
     frame = requestAnimationFrame(draw);
   }
 }
-$('#motion').addEventListener('click', () => {
-  // The OS reduced-motion setting takes precedence over the play button.
-  motionPaused = reducedMotion.matches || !motionPaused;
-  syncMotion();
-});
 reducedMotion.addEventListener('change', () => { motionPaused = reducedMotion.matches; syncMotion(); });
 document.addEventListener('visibilitychange', syncMotion);
 syncMotion();
 
-// Native validation supplies accessible, field-specific errors.
-const waitForm = $('#waitlist-form');
-const isLocal = location.protocol === 'file:' || ['localhost', '127.0.0.1', ''].includes(location.hostname);
-const waitlistLive = !isLocal && (WAITLIST.provider === 'netlify' || (WAITLIST.provider === 'formspree' && /^https:\/\/formspree\.io\/f\/[a-z0-9]+$/i.test(WAITLIST.endpoint)));
-$('.form-mode', waitForm).textContent = waitlistLive ? 'Your email is used for BoltCharge launch updates.' : 'Preview mode: submissions are not sent or saved. Live registration opens after setup.';
-waitForm.addEventListener('submit', async event => {
-  event.preventDefault();
-  const email = $('#wait-email'); email.value = email.value.trim();
-  if (!waitForm.reportValidity()) return;
-  const status = $('.form-status', waitForm);
-  if (!waitlistLive) {
-    status.textContent = 'Your details passed validation. This is a preview: you have not joined a waitlist and no email has been saved.';
-    return;
-  }
-  const button = $('button[type="submit"]', waitForm);
-  button.disabled = true; waitForm.setAttribute('aria-busy', 'true');
-  status.textContent = 'Submitting your request…';
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-  try {
-    const data = new FormData(waitForm);
-    const endpoint = WAITLIST.provider === 'netlify' ? '/' : WAITLIST.endpoint;
-    const response = await fetch(endpoint, {
-      method: 'POST', signal: controller.signal,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-      body: new URLSearchParams(data).toString()
-    });
-    if (!response.ok) throw new Error('Submission failed');
-    if (WAITLIST.provider === 'formspree') {
-      const result = await response.json();
-      if (!result.ok) throw new Error('Submission rejected');
-    }
-    status.textContent = 'Thanks! Your launch notification request has been received.';
-    waitForm.reset();
-  } catch (_) {
-    status.textContent = 'We couldn’t confirm your submission. Please try again later. Your details remain in the form.';
-  } finally {
-    clearTimeout(timeout); button.disabled = false; waitForm.removeAttribute('aria-busy');
-  }
-});
-$('#contact-form').addEventListener('submit', event => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  $$('input, textarea', form).forEach(field => { field.value = field.value.trim(); });
-  if (!form.reportValidity()) return;
-  // Connect Formspree or EmailJS here. Show a sent message ONLY after a
-  // successful service response; never expose private service credentials.
-  $('.form-status', form).textContent = 'Message validated successfully. Demo only: nothing has been sent. Connect a form service to accept inquiries.';
-});
+// Both forms send real submissions to Formspree on localhost and when deployed.
+// The HTML action/method are kept as a native fallback when JavaScript is disabled.
+// On file:// URLs, native POST avoids browsers blocking cross-origin fetch from null origins.
+function formErrorMessage(result, fallback) {
+  const messages = Array.isArray(result?.errors)
+    ? result.errors.map(item => item?.message).filter(Boolean)
+    : [];
+  return messages.length ? messages.join(' ') : fallback;
+}
 
-// Enable submission only after the handlers have been installed.
-$$('button[type="submit"]').forEach(button => { button.disabled = false; });
+function wireSubmission(formId, pendingText, successText) {
+  const form = $(formId);
+  const button = $('button[type="submit"]', form);
+  const status = $('.form-status', form);
+
+  // Clear obsolete errors when the visitor edits a field.
+  form.addEventListener('input', () => {
+    if (form.getAttribute('aria-busy') === 'true') return;
+    if (status.classList.contains('error')) {
+      status.classList.remove('error');
+      status.textContent = '';
+    }
+  });
+
+  form.addEventListener('submit', async event => {
+    // Formspree's own hosted confirmation page handles local file:// previews.
+    if (location.protocol === 'file:') return;
+    event.preventDefault();
+    if (form.getAttribute('aria-busy') === 'true') return;
+
+    $$('input:not([type="hidden"]):not([type="checkbox"]), textarea', form)
+      .forEach(field => { field.value = field.value.trim(); });
+    if (!form.reportValidity()) return;
+
+    button.disabled = true;
+    form.setAttribute('aria-busy', 'true');
+    status.classList.remove('error', 'success');
+    status.textContent = pendingText;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        body: new FormData(form),
+        signal: controller.signal
+      });
+      const result = await response.json().catch(() => null);
+      // Show success only when Formspree explicitly confirms acceptance.
+      // A captive portal or an HTML error page can return HTTP 200.
+      if (!response.ok || result?.ok !== true) {
+        throw new Error(formErrorMessage(result, 'The submission was not confirmed. Please try again.'));
+      }
+      status.classList.add('success');
+      status.textContent = successText;
+      form.reset();
+    } catch (error) {
+      status.classList.add('error');
+      status.textContent = error?.name === 'AbortError'
+        ? 'The request timed out. Please check your connection and try again.'
+        : error?.message === 'Failed to fetch' || error instanceof TypeError
+          ? 'Could not connect to the submission service. Please try again.'
+          : error?.message || 'Something went wrong. Please try again.';
+    } finally {
+      clearTimeout(timeout);
+      button.disabled = false;
+      form.removeAttribute('aria-busy');
+    }
+  });
+}
+
+wireSubmission('#waitlist-form', 'Joining the waitlist…', 'You’re on the list! We’ll email you with BoltCharge launch news.');
+wireSubmission('#contact-form', 'Sending your message…', 'Message sent. Thanks for reaching out!');
+
+// Jump from any waitlist link straight to the signup input (and keep the URL anchor).
+$$('a[href="#waitlist"]').forEach(link => link.addEventListener('click', () => {
+  setTimeout(() => $('#wait-email').focus({ preventScroll: true }), 200);
+}));
